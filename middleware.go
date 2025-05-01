@@ -196,6 +196,10 @@ func parseRequestBody(c *Client, r *Request) error {
 			}
 		case len(c.FormData) > 0 || len(r.FormData) > 0: // Handling Form Data
 			handleFormData(c, r)
+		case r.Body == nil && r.bodyBuf == nil: // Handling Request body when nil body
+			// Go http library omits Content-Length if body is nil; use http.NoBody to force it if SetContentLength is true
+			r.Body = http.NoBody
+			fallthrough
 		case r.Body != nil: // Handling Request body
 			handleContentType(c, r)
 
@@ -315,6 +319,7 @@ func createCurlCmd(c *Client, r *Request) (err error) {
 		}
 		*r.resultCurlCmd = buildCurlRequest(r.RawRequest, c.httpClient.Jar)
 	}
+
 	return nil
 }
 
