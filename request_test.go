@@ -2397,3 +2397,20 @@ func TestSetContentLengthTrueWithNilBody(t *testing.T) {
 	// when body is nil and SetContentLength is true expect Content-Length == "0"
 	assertEqual(t, "0", resp.Header().Get("Request-Content-Length"))
 }
+
+func TestGH1074ContentTypeHdrIssue(t *testing.T) {
+	ts := createTestServer(func(w http.ResponseWriter, r *http.Request) {
+		t.Logf("Method: %v", r.Method)
+		t.Logf("Path: %v", r.URL.Path)
+		t.Logf("Headers: %v", r.Header)
+
+		assertEqual(t, "", r.Header.Get(hdrContentTypeKey))
+
+		w.WriteHeader(http.StatusOK)
+	})
+	defer ts.Close()
+
+	c := dc()
+	_, err := c.R().Delete(ts.URL)
+	assertNil(t, err)
+}
