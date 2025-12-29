@@ -27,7 +27,7 @@ func TestEventSourceSimpleFlow(t *testing.T) {
 	messageFunc := func(e any) {
 		event := e.(*Event)
 		assertEqual(t, strconv.Itoa(messageCounter), event.ID)
-		assertEqual(t, true, strings.HasPrefix(event.Data, "The time is"))
+		assertTrue(t, strings.HasPrefix(event.Data, "The time is"))
 		messageCounter++
 		if messageCounter == 100 {
 			es.Close()
@@ -69,7 +69,7 @@ func TestEventSourceMultipleEventTypes(t *testing.T) {
 	userConnectFunc := func(e any) {
 		data := e.(*userEvent)
 		assertEqual(t, "username"+strconv.Itoa(userConnectCounter), data.UserName)
-		assertEqual(t, true, data.Time.After(tm))
+		assertTrue(t, data.Time.After(tm))
 		userConnectCounter++
 	}
 
@@ -78,7 +78,7 @@ func TestEventSourceMultipleEventTypes(t *testing.T) {
 		data := e.(*userEvent)
 		assertEqual(t, "username"+strconv.Itoa(userConnectCounter), data.UserName)
 		assertEqual(t, "Hello, how are you?", data.Message)
-		assertEqual(t, true, data.Time.After(tm))
+		assertTrue(t, data.Time.After(tm))
 		userMessageCounter++
 	}
 
@@ -140,7 +140,7 @@ func TestEventSourceOverwriteFuncs(t *testing.T) {
 	messageFunc2 := func(e any) {
 		event := e.(*Event)
 		assertEqual(t, strconv.Itoa(message2Counter), event.ID)
-		assertEqual(t, true, strings.HasPrefix(event.Data, "The time is"))
+		assertTrue(t, strings.HasPrefix(event.Data, "The time is"))
 		message2Counter++
 		if message2Counter == 50 {
 			es.Close()
@@ -179,9 +179,9 @@ func TestEventSourceOverwriteFuncs(t *testing.T) {
 	assertEqual(t, counter, message2Counter)
 
 	logLines := lb.String()
-	assertEqual(t, true, strings.Contains(logLines, "Overwriting an existing OnEvent callback"))
-	assertEqual(t, true, strings.Contains(logLines, "Overwriting an existing OnOpen callback"))
-	assertEqual(t, true, strings.Contains(logLines, "Overwriting an existing OnError callback"))
+	assertTrue(t, strings.Contains(logLines, "Overwriting an existing OnEvent callback"))
+	assertTrue(t, strings.Contains(logLines, "Overwriting an existing OnOpen callback"))
+	assertTrue(t, strings.Contains(logLines, "Overwriting an existing OnError callback"))
 }
 
 func TestEventSourceRetry(t *testing.T) {
@@ -191,7 +191,7 @@ func TestEventSourceRetry(t *testing.T) {
 	messageFunc := func(e any) {
 		event := e.(*Event)
 		assertEqual(t, strconv.Itoa(messageCounter), event.ID)
-		assertEqual(t, true, strings.HasPrefix(event.Data, "The time is"))
+		assertTrue(t, strings.HasPrefix(event.Data, "The time is"))
 		messageCounter++
 		if messageCounter == 15 {
 			es.Close()
@@ -320,7 +320,7 @@ func TestEventSourceNoRetryRequired(t *testing.T) {
 	es.SetURL(ts.URL)
 	err := es.Get()
 	fmt.Println(err)
-	assertEqual(t, true, strings.Contains(err.Error(), "400 Bad Request"))
+	assertTrue(t, strings.Contains(err.Error(), "400 Bad Request"))
 }
 
 func TestGH1044TrimHeader(t *testing.T) {
@@ -332,13 +332,13 @@ func TestGH1044TrimHeader(t *testing.T) {
 	t.Run("data has double whitespace", func(t *testing.T) {
 		data := []byte("data:  double whitespace message")
 		result := trimHeader(5, data)
-		assertEqual(t, true, result[0] == ' ')
+		assertTrue(t, result[0] == ' ')
 	})
 
 	t.Run("data has newline", func(t *testing.T) {
 		data := []byte("data: newline message\n")
 		result := trimHeader(5, data)
-		assertEqual(t, true, result[len(result)-1] != '\n')
+		assertTrue(t, result[len(result)-1] != '\n')
 	})
 }
 
@@ -376,7 +376,7 @@ func TestEventSourceHTTPError(t *testing.T) {
 
 	es.SetURL(ts.URL)
 	err := es.Get()
-	assertEqual(t, true, strings.Contains(err.Error(), `invalid character " " in host name`))
+	assertTrue(t, strings.Contains(err.Error(), `invalid character " " in host name`))
 }
 
 func TestEventSourceParseAndReadError(t *testing.T) {
@@ -433,7 +433,7 @@ func TestEventSourceReadError(t *testing.T) {
 	es.SetURL(ts.URL)
 	err := es.Get()
 	assertNotNil(t, err)
-	assertEqual(t, true, strings.Contains(err.Error(), "read event test error"))
+	assertTrue(t, strings.Contains(err.Error(), "read event test error"))
 }
 
 func TestEventSourceCoverage(t *testing.T) {
@@ -448,7 +448,7 @@ func TestEventSourceCoverage(t *testing.T) {
 	es.OnMessage(func(a any) {}, nil)
 	es.SetURL("//res%20ty.dev")
 	err3 := es.Get()
-	assertEqual(t, true, strings.Contains(err3.Error(), `invalid URL escape "%20"`))
+	assertTrue(t, strings.Contains(err3.Error(), `invalid URL escape "%20"`))
 
 	wrapResponse(nil)
 	trimHeader(2, nil)
@@ -553,7 +553,7 @@ func TestEventSourceWithDifferentMethods(t *testing.T) {
 			messageFunc := func(e any) {
 				event := e.(*Event)
 				assertEqual(t, strconv.Itoa(messageCounter), event.ID)
-				assertEqual(t, true, strings.HasPrefix(event.Data, fmt.Sprintf("%s method test:", tc.method)))
+				assertTrue(t, strings.HasPrefix(event.Data, fmt.Sprintf("%s method test:", tc.method)))
 				messageCounter++
 				if messageCounter == 20 {
 					es.Close()
@@ -598,9 +598,9 @@ func TestEventSourceWithDifferentMethods(t *testing.T) {
 			assertEqual(t, counter, messageCounter)
 
 			// check if server receive correct method and body
-			assertEqual(t, true, methodVerified)
+			assertTrue(t, methodVerified)
 			if tc.body != nil {
-				assertEqual(t, true, bodyVerified)
+				assertTrue(t, bodyVerified)
 			}
 		})
 	}
