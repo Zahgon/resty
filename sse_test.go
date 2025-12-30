@@ -436,82 +436,6 @@ func TestEventSourceReadError(t *testing.T) {
 	assertTrue(t, strings.Contains(err.Error(), "read event test error"))
 }
 
-func TestEventSourceCoverage(t *testing.T) {
-	es := NewEventSource()
-	err1 := es.Get()
-	assertEqual(t, "resty:sse: event source URL is required", err1.Error())
-
-	es.SetURL("https://sse.dev/test")
-	err2 := es.Get()
-	assertEqual(t, "resty:sse: At least one OnMessage/AddEventListener func is required", err2.Error())
-
-	es.OnMessage(func(a any) {}, nil)
-	es.SetURL("//res%20ty.dev")
-	err3 := es.Get()
-	assertTrue(t, strings.Contains(err3.Error(), `invalid URL escape "%20"`))
-
-	wrapResponse(nil)
-	trimHeader(2, nil)
-	parseEvent([]byte{})
-}
-
-func createEventSource(t *testing.T, url string, fn EventMessageFunc, rt any) *EventSource {
-	es := NewEventSource().
-		SetURL(url).
-		SetMethod(MethodGet).
-		AddHeader("X-Test-Header-1", "test header 1").
-		SetHeader("X-Test-Header-2", "test header 2").
-		SetRetryCount(2).
-		SetRetryWaitTime(200 * time.Millisecond).
-		SetRetryMaxWaitTime(1000 * time.Millisecond).
-		SetMaxBufSize(1 << 14). // 16kb
-		SetLogger(createLogger()).
-		OnOpen(func(url string, respHdr http.Header) {
-			t.Log("I'm connected:", url, respHdr)
-		}).
-		OnError(func(err error) {
-			t.Log("Error occurred:", err)
-		})
-	if fn != nil {
-		es.OnMessage(fn, rt)
-	}
-	return es
-}
-
-func createSSETestServer(t *testing.T, ticker time.Duration, fn func(io.Writer) error) *httptest.Server {
-	return createTestServer(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Connection", "keep-alive")
-
-		// for local testing allow it
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-
-		// Create a channel for client disconnection
-		clientGone := r.Context().Done()
-
-		rc := http.NewResponseController(w)
-		tick := time.NewTicker(ticker)
-		defer tick.Stop()
-		for {
-			select {
-			case <-clientGone:
-				t.Log("Client disconnected")
-				return
-			case <-tick.C:
-				if err := fn(w); err != nil {
-					t.Log(err)
-					return
-				}
-				if err := rc.Flush(); err != nil {
-					t.Log(err)
-					return
-				}
-			}
-		}
-	})
-}
-
 func TestEventSourceWithDifferentMethods(t *testing.T) {
 	testCases := []struct {
 		name   string
@@ -606,6 +530,141 @@ func TestEventSourceWithDifferentMethods(t *testing.T) {
 	}
 }
 
+func TestEventSource_readEventFunc(t *testing.T) {
+	t.Run("successful scan", func(t *testing.T) {
+		input := "event: test\ndata: test data\n\n"
+		scanner := bufio.NewScanner(strings.NewReader(input))
+
+		event, err := readEventFunc(scanner)
+
+		assertNil(t, err)
+		assertNotNil(t, event)
+		assertEqual(t, "event: test", string(event))
+	})
+
+	t.Run("scanner error", func(t *testing.T) {
+		// Create a custom reader that returns an error
+		scanner := bufio.NewScanner(&errorReader{})
+
+		event, err := readEventFunc(scanner)
+
+		assertNotNil(t, err)
+		assertNil(t, event)
+		assertEqual(t, "fake", err.Error())
+	})
+
+	t.Run("EOF error", func(t *testing.T) {
+		// Empty reader will immediately return EOF
+		scanner := bufio.NewScanner(strings.NewReader(""))
+
+		event, err := readEventFunc(scanner)
+
+		assertEqual(t, io.EOF, err)
+		assertNil(t, event)
+	})
+
+	t.Run("multiple lines", func(t *testing.T) {
+		input := "line1\nline2\nline3\n"
+		scanner := bufio.NewScanner(strings.NewReader(input))
+
+		// First call should return the first line
+		event1, err1 := readEventFunc(scanner)
+		assertNil(t, err1)
+		assertEqual(t, "line1", string(event1))
+
+		// Second call should return the second line
+		event2, err2 := readEventFunc(scanner)
+		assertNil(t, err2)
+		assertEqual(t, "line2", string(event2))
+
+		// Third call should return the third line
+		event3, err3 := readEventFunc(scanner)
+		assertNil(t, err3)
+		assertEqual(t, "line3", string(event3))
+
+		// Fourth call should return EOF
+		event4, err4 := readEventFunc(scanner)
+		assertEqual(t, io.EOF, err4)
+		assertNil(t, event4)
+	})
+}
+
+func TestEventSourceCoverage(t *testing.T) {
+	es := NewEventSource()
+	err1 := es.Get()
+	assertEqual(t, "resty:sse: event source URL is required", err1.Error())
+
+	es.SetURL("https://sse.dev/test")
+	err2 := es.Get()
+	assertEqual(t, "resty:sse: At least one OnMessage/AddEventListener func is required", err2.Error())
+
+	es.OnMessage(func(a any) {}, nil)
+	es.SetURL("//res%20ty.dev")
+	err3 := es.Get()
+	assertTrue(t, strings.Contains(err3.Error(), `invalid URL escape "%20"`))
+
+	wrapResponse(nil)
+	trimHeader(2, nil)
+	parseEvent([]byte{})
+}
+
+func createEventSource(t *testing.T, url string, fn EventMessageFunc, rt any) *EventSource {
+	es := NewEventSource().
+		SetURL(url).
+		SetMethod(MethodGet).
+		AddHeader("X-Test-Header-1", "test header 1").
+		SetHeader("X-Test-Header-2", "test header 2").
+		SetRetryCount(2).
+		SetRetryWaitTime(200 * time.Millisecond).
+		SetRetryMaxWaitTime(1000 * time.Millisecond).
+		SetMaxBufSize(1 << 14). // 16kb
+		SetLogger(createLogger()).
+		OnOpen(func(url string, respHdr http.Header) {
+			t.Log("I'm connected:", url, respHdr)
+		}).
+		OnError(func(err error) {
+			t.Log("Error occurred:", err)
+		})
+	if fn != nil {
+		es.OnMessage(fn, rt)
+	}
+	return es
+}
+
+func createSSETestServer(t *testing.T, ticker time.Duration, fn func(io.Writer) error) *httptest.Server {
+	return createTestServer(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+
+		// for local testing allow it
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+
+		// Create a channel for client disconnection
+		clientGone := r.Context().Done()
+
+		rc := http.NewResponseController(w)
+		tick := time.NewTicker(ticker)
+		defer tick.Stop()
+		for {
+			select {
+			case <-clientGone:
+				t.Log("Client disconnected")
+				return
+			case <-tick.C:
+				if err := fn(w); err != nil {
+					t.Log(err)
+					return
+				}
+				if err := rc.Flush(); err != nil {
+					t.Log(err)
+					return
+				}
+			}
+		}
+	})
+}
+
 // almost like create server before but add verifying method and body
 func createMethodVerifyingSSETestServer(
 	t *testing.T,
@@ -616,7 +675,7 @@ func createMethodVerifyingSSETestServer(
 	bodyVerified *bool,
 	fn func(io.Writer) error,
 ) *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return createTestServer(func(w http.ResponseWriter, r *http.Request) {
 		// validate method
 		if r.Method == expectedMethod {
 			*methodVerified = true
@@ -664,5 +723,5 @@ func createMethodVerifyingSSETestServer(
 				}
 			}
 		}
-	}))
+	})
 }
