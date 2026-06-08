@@ -125,6 +125,11 @@ func isDoNotRetryError(err error) bool {
 }
 
 func newBackoffWithJitter(min, max time.Duration) *backoffWithJitter {
+	if min == 0 && max == 0 { // GH#992
+		return &backoffWithJitter{
+			rnd: rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64())),
+		}
+	}
 	if min <= 0 {
 		min = defaultWaitTime
 	}

@@ -1187,7 +1187,16 @@ func TestRetryConstantDelayUsingStrategy(t *testing.T) {
 
 func TestRetryCoverage(t *testing.T) {
 	t.Run("apply retry default min and max value", func(t *testing.T) {
-		backoff := newBackoffWithJitter(0, 0)
+		backoff1 := newBackoffWithJitter(0, 0)
+		assertEqual(t, time.Duration(0), backoff1.min)
+		assertEqual(t, time.Duration(0), backoff1.max)
+		assertEqual(t, time.Duration(0), backoff1.balanceMinMax(0))
+
+		backoff2 := newBackoffWithJitter(100, 0)
+		assertEqual(t, time.Duration(100), backoff2.min)
+		assertEqual(t, defaultMaxWaitTime, backoff2.max)
+
+		backoff := newBackoffWithJitter(-1, 0)
 		assertEqual(t, defaultWaitTime, backoff.min)
 		assertEqual(t, defaultMaxWaitTime, backoff.max)
 
