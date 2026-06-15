@@ -1698,6 +1698,77 @@ func TestClientOnCloseMultipleHooks(t *testing.T) {
 	assertEqual(t, []string{"first", "second", "third"}, executionOrder)
 }
 
+func TestClientCloseIdempotent(t *testing.T) {
+	closeCounter := 0
+	c := dcnl()
+	c.OnClose(func() {
+		closeCounter++
+	})
+
+	assertNil(t, c.Close())
+	assertNil(t, c.Close()) // subsequent close is a no-op, no panic
+	assertEqual(t, 1, closeCounter)
+}
+
+func TestClientCloneClose(t *testing.T) {
+	c := dcnl()
+	cc := c.Clone(context.Background())
+
+	// the clone has its own lifecycle; closing both must not panic
+	assertNil(t, c.Close())
+	assertNil(t, cc.Close())
+}
+
+func TestClientCloseConcurrentIdempotent(t *testing.T) {
+	const goroutines = 64
+
+	closeCounter := 0
+	c := dcnl()
+	c.OnClose(func() {
+		// only one goroutine ever reaches the hook, so a plain
+		// increment is data-race free
+		closeCounter++
+	})
+
+	errs := make([]error, goroutines)
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func(idx int) {
+			defer wg.Done()
+			errs[idx] = c.Close()
+		}(i)
+	}
+	wg.Wait()
+
+	// concurrent closes must not panic and every call returns nil
+	for _, err := range errs {
+		assertNil(t, err)
+	}
+	// the OnClose hook runs exactly once
+	assertEqual(t, 1, closeCounter)
+}
+
+func TestClientCloneAfterCloseLifecycle(t *testing.T) {
+	c := dcnl()
+
+	// parent closes first
+	assertNil(t, c.Close())
+	assertEqual(t, true, c.isClosed)
+
+	// a clone taken from a closed parent starts with a fresh lifecycle
+	cc := c.Clone(context.Background())
+	assertEqual(t, false, cc.isClosed)
+
+	// closing the clone is idempotent and must not panic
+	assertNil(t, cc.Close())
+	assertNil(t, cc.Close())
+	assertEqual(t, true, cc.isClosed)
+
+	// the parent remains closed and unaffected by the clone's lifecycle
+	assertEqual(t, true, c.isClosed)
+}
+
 func TestClientHedgingMutualExclusionWithRetry(t *testing.T) {
 	c := dcnl()
 
