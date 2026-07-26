@@ -108,6 +108,7 @@ type Request struct {
 	unescapeQueryParams  bool
 	multipartErrChan     chan error
 	multipartCancelFunc  context.CancelFunc
+	multipartPipeWriter  *io.PipeWriter
 }
 
 // SetCorrelationID method is used to set the correlation ID for the request
@@ -1609,6 +1610,26 @@ func (r *Request) Execute(method, url string) (res *Response, err error) {
 	return
 }
 
+// stopMultipart cancels multipart streaming, closes the pipe writer, and closes
+// field readers so a writer blocked in io.Reader.Read can unblock once the HTTP
+// round-trip ends (or needs to be aborted).
+func (r *Request) stopMultipart() {
+	if r == nil {
+		return
+	}
+	if r.multipartCancelFunc != nil {
+		r.multipartCancelFunc()
+	}
+	if r.multipartPipeWriter != nil {
+		// Unblock Client.Do / RoundTrip waiting on the request body pipe.
+		_ = r.multipartPipeWriter.CloseWithError(io.ErrClosedPipe)
+		r.multipartPipeWriter = nil
+	}
+	for _, mf := range r.multipartFields {
+		mf.close()
+	}
+}
+
 // Clone returns a deep copy of r with its context changed to ctx.
 // It does clone appropriate fields, reset, and reinitialize, so
 // [Request] can be used again.
@@ -1674,6 +1695,8 @@ func (r *Request) Clone(ctx context.Context) *Request {
 	rr.initTraceIfEnabled()
 	rr.values = make(map[string]any)
 	rr.multipartErrChan = nil
+	rr.multipartCancelFunc = nil
+	rr.multipartPipeWriter = nil
 	rr.ctxCancelFunc = nil
 
 	// copy bodyBuf
