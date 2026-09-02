@@ -1,50 +1,24 @@
-// Copyright (c) 2015-present Jeevanandam M (jeeva@myjeeva.com), All rights reserved.
-// 2023 Segev Dagan (https://github.com/segevda)
-// 2024 Philipp Wolfer (https://github.com/phw)
-// resty source code and usage is governed by a MIT style
-// license that can be found in the LICENSE file.
-// SPDX-License-Identifier: MIT
-
 package resty
 
 import (
-	"bytes"
 	"crypto/md5"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/sha512"
-	"encoding/hex"
 	"errors"
-	"fmt"
 	"hash"
-	"io"
 	"net/http"
-	"strconv"
-	"strings"
 )
 
 var (
-	// ErrDigestBadChallenge is returned when the server sends a malformed or
-	// unrecognisable Digest challenge in the WWW-Authenticate header.
 	ErrDigestBadChallenge = errors.New("resty: digest: challenge is bad")
 
-	// ErrDigestInvalidCharset is returned when the Digest challenge specifies
-	// a charset other than UTF-8.
 	ErrDigestInvalidCharset = errors.New("resty: digest: invalid charset")
 
-	// ErrDigestAlgNotSupported is returned when the Digest challenge uses a
-	// hash algorithm not supported by Resty (see [RFC 7616 Section 6.1]).
-	//
-	// [RFC 7616 Section 6.1]: https://datatracker.ietf.org/doc/html/rfc7616#section-6.1
 	ErrDigestAlgNotSupported = errors.New("resty: digest: algorithm is not supported")
 
-	// ErrDigestQopNotSupported is returned when none of the quality-of-protection
-	// (qop) directives in the Digest challenge are supported by Resty.
-	// Resty supports auth and auth-int.
 	ErrDigestQopNotSupported = errors.New("resty: digest: qop is not supported")
 )
 
-// Reference: https://datatracker.ietf.org/doc/html/rfc7616#section-6.1
 var digestHashFuncs = map[string]func() hash.Hash{
 	"":                 md5.New,
 	"MD5":              md5.New,
@@ -68,174 +42,27 @@ type digestTransport struct {
 }
 
 func (dt *digestTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	// first request without body for all HTTP verbs
-	req1 := dt.cloneReq(req, true)
-
-	// make a request to get the 401 that contains the challenge.
-	res, err := dt.transport.RoundTrip(req1)
-	if err != nil {
-		return nil, err
-	}
-	if res.StatusCode != http.StatusUnauthorized {
-		return res, nil
-	}
-	_, _ = ioCopy(io.Discard, res.Body)
-	closeq(res.Body)
-
-	chaHdrValue := strings.TrimSpace(res.Header.Get(hdrWwwAuthenticateKey))
-	if chaHdrValue == "" {
-		return nil, ErrDigestBadChallenge
-	}
-
-	cha, err := dt.parseChallenge(chaHdrValue)
-	if err != nil {
-		return nil, err
-	}
-
-	// prepare second request
-	req2 := dt.cloneReq(req, false)
-	cred, err := dt.createCredentials(cha, req2)
-	if err != nil {
-		return nil, err
-	}
-
-	auth, err := cred.digest(cha)
-	if err != nil {
-		return nil, err
-	}
-
-	req2.Header.Set(hdrAuthorizationKey, auth)
-	return dt.transport.RoundTrip(req2)
+	_ = "STUB: not implemented"
+	return nil, nil
 }
 
 func (dt *digestTransport) cloneReq(r *http.Request, first bool) *http.Request {
-	r1 := r.Clone(r.Context())
-	if first {
-		r1.Body = http.NoBody
-		r1.ContentLength = 0
-		r1.GetBody = nil
-	}
-	return r1
+	_ = "STUB: not implemented"
+	return nil
 }
 
 func (dt *digestTransport) parseChallenge(input string) (*digestChallenge, error) {
-	const ws = " \n\r\t"
-	s := strings.Trim(input, ws)
-	if !strings.HasPrefix(s, "Digest ") {
-		return nil, ErrDigestBadChallenge
-	}
-
-	s = strings.Trim(s[7:], ws)
-	c := &digestChallenge{}
-	b := strings.Builder{}
-	key := ""
-	quoted := false
-	for _, r := range s {
-		switch r {
-		case '"':
-			quoted = !quoted
-		case ',':
-			if quoted {
-				b.WriteRune(r)
-			} else {
-				val := strings.Trim(b.String(), ws)
-				b.Reset()
-				if err := c.setValue(key, val); err != nil {
-					return nil, err
-				}
-				key = ""
-			}
-		case '=':
-			if quoted {
-				b.WriteRune(r)
-			} else {
-				key = strings.Trim(b.String(), ws)
-				b.Reset()
-			}
-		default:
-			b.WriteRune(r)
-		}
-	}
-
-	key = strings.TrimSpace(key)
-	if quoted || (key == "" && b.Len() > 0) {
-		return nil, ErrDigestBadChallenge
-	}
-
-	if key != "" {
-		val := strings.Trim(b.String(), ws)
-		if err := c.setValue(key, val); err != nil {
-			return nil, err
-		}
-	}
-
-	return c, nil
+	_ = "STUB: not implemented"
+	return nil, nil
 }
 
 func (dt *digestTransport) createCredentials(cha *digestChallenge, req *http.Request) (*digestCredentials, error) {
-	cred := &digestCredentials{
-		username:      dt.Username,
-		password:      dt.Password,
-		uri:           req.URL.RequestURI(),
-		method:        req.Method,
-		realm:         cha.realm,
-		nonce:         cha.nonce,
-		nc:            cha.nc,
-		algorithm:     cha.algorithm,
-		sessAlgorithm: strings.HasSuffix(cha.algorithm, "-sess"),
-		opaque:        cha.opaque,
-		userHash:      cha.userHash,
-	}
-
-	if err := cred.parseQop(cha); err != nil {
-		return nil, err
-	}
-
-	if cred.qop == qopAuthInt {
-		if err := dt.prepareBody(req); err != nil {
-			return nil, fmt.Errorf("resty: digest: failed to prepare body for auth-int: %w", err)
-		}
-		body, err := req.GetBody()
-		if err != nil {
-			return nil, fmt.Errorf("resty: digest: failed to get body for auth-int: %w", err)
-		}
-		h := newHashFunc(cha.algorithm)
-		if body != nil && body != http.NoBody {
-			defer closeq(body)
-			if _, err := ioCopy(h, body); err != nil {
-				return nil, fmt.Errorf("resty: digest: failed to hash body for auth-int: %w", err)
-			}
-		}
-		cred.bodyHash = hex.EncodeToString(h.Sum(nil))
-	}
-
-	return cred, nil
+	_ = "STUB: not implemented"
+	return nil, nil
 }
 
 func (dt *digestTransport) prepareBody(req *http.Request) error {
-	if req.GetBody != nil {
-		return nil
-	}
-
-	if req.Body == nil || req.Body == http.NoBody {
-		req.GetBody = func() (io.ReadCloser, error) {
-			return http.NoBody, nil
-		}
-		return nil
-	}
-
-	b, err := ioReadAll(req.Body)
-	if err != nil {
-		return fmt.Errorf("resty: digest: failed to read request body: %w", err)
-	}
-
-	closeq(req.Body)
-	req.GetBody = func() (io.ReadCloser, error) {
-		return io.NopCloser(bytes.NewReader(b)), nil
-	}
-
-	req.Body = io.NopCloser(bytes.NewReader(b))
-
+	_ = "STUB: not implemented"
 	return nil
 }
 
@@ -251,50 +78,9 @@ type digestChallenge struct {
 	userHash  string
 }
 
-func (dc *digestChallenge) isQopSupported(qop string) bool {
-	for _, v := range dc.qop {
-		if v == qop {
-			return true
-		}
-	}
-	return false
-}
+func (dc *digestChallenge) isQopSupported(qop string) bool { _ = "STUB: not implemented"; return false }
 
-func (dc *digestChallenge) setValue(k, v string) error {
-	switch k {
-	case "realm":
-		dc.realm = v
-	case "domain":
-		dc.domain = v
-	case "nonce":
-		dc.nonce = v
-	case "opaque":
-		dc.opaque = v
-	case "stale":
-		dc.stale = v
-	case "algorithm":
-		dc.algorithm = v
-	case "qop":
-		if !isStringEmpty(v) {
-			dc.qop = strings.Split(v, ",")
-		}
-	case "charset":
-		if strings.ToUpper(v) != "UTF-8" {
-			return ErrDigestInvalidCharset
-		}
-	case "nc":
-		nc, err := strconv.ParseInt(v, 16, 32)
-		if err != nil {
-			return fmt.Errorf("resty: digest: invalid nc: %w", err)
-		}
-		dc.nc = int(nc)
-	case "userhash":
-		dc.userHash = v
-	default:
-		return ErrDigestBadChallenge
-	}
-	return nil
-}
+func (dc *digestChallenge) setValue(k, v string) error { _ = "STUB: not implemented"; return nil }
 
 type digestCredentials struct {
 	username      string
@@ -315,109 +101,21 @@ type digestCredentials struct {
 }
 
 func (dc *digestCredentials) parseQop(cha *digestChallenge) error {
-	if len(cha.qop) == 0 {
-		return nil
-	}
-
-	if cha.isQopSupported(qopAuth) {
-		dc.qop = qopAuth
-		return nil
-	}
-
-	if cha.isQopSupported(qopAuthInt) {
-		dc.qop = qopAuthInt
-		return nil
-	}
-
-	return ErrDigestQopNotSupported
+	_ = "STUB: not implemented"
+	return nil
 }
 
-func (dc *digestCredentials) h(data string) string {
-	h := newHashFunc(dc.algorithm)
-	_, _ = h.Write([]byte(data))
-	return hex.EncodeToString(h.Sum(nil))
-}
+func (dc *digestCredentials) h(data string) string { _ = "STUB: not implemented"; return "" }
 
 func (dc *digestCredentials) digest(cha *digestChallenge) (string, error) {
-	if _, ok := digestHashFuncs[dc.algorithm]; !ok {
-		return "", ErrDigestAlgNotSupported
-	}
-
-	if err := dc.parseQop(cha); err != nil {
-		return "", err
-	}
-
-	dc.nc++
-
-	b := make([]byte, 16)
-	_, _ = io.ReadFull(rand.Reader, b)
-	dc.cnonce = hex.EncodeToString(b)
-
-	ha1 := dc.ha1()
-	ha2 := dc.ha2()
-
-	var resp string
-	switch dc.qop {
-	case "":
-		resp = fmt.Sprintf("%s:%s:%s", ha1, dc.nonce, ha2)
-	case qopAuth, qopAuthInt:
-		resp = fmt.Sprintf("%s:%s:%08x:%s:%s:%s",
-			ha1, dc.nonce, dc.nc, dc.cnonce, dc.qop, ha2)
-	}
-	dc.response = dc.h(resp)
-
-	return "Digest " + dc.String(), nil
+	_ = "STUB: not implemented"
+	return "", nil
 }
 
-// https://datatracker.ietf.org/doc/html/rfc7616#section-3.4.2
-func (dc *digestCredentials) ha1() string {
-	a1 := dc.h(fmt.Sprintf("%s:%s:%s", dc.username, dc.realm, dc.password))
-	if dc.sessAlgorithm {
-		return dc.h(fmt.Sprintf("%s:%s:%s", a1, dc.nonce, dc.cnonce))
-	}
-	return a1
-}
+func (dc *digestCredentials) ha1() string { _ = "STUB: not implemented"; return "" }
 
-// https://datatracker.ietf.org/doc/html/rfc7616#section-3.4.3
-func (dc *digestCredentials) ha2() string {
-	if dc.qop == qopAuthInt {
-		return dc.h(fmt.Sprintf("%s:%s:%s", dc.method, dc.uri, dc.bodyHash))
-	}
-	return dc.h(fmt.Sprintf("%s:%s", dc.method, dc.uri))
-}
+func (dc *digestCredentials) ha2() string { _ = "STUB: not implemented"; return "" }
 
-func (dc *digestCredentials) String() string {
-	sl := make([]string, 0, 10)
-	// https://datatracker.ietf.org/doc/html/rfc7616#section-3.4.4
-	if dc.userHash == "true" {
-		dc.username = dc.h(fmt.Sprintf("%s:%s", dc.username, dc.realm))
-	}
-	sl = append(sl, fmt.Sprintf(`username="%s"`, dc.username))
-	sl = append(sl, fmt.Sprintf(`realm="%s"`, dc.realm))
-	sl = append(sl, fmt.Sprintf(`nonce="%s"`, dc.nonce))
-	sl = append(sl, fmt.Sprintf(`uri="%s"`, dc.uri))
-	if dc.algorithm != "" {
-		sl = append(sl, fmt.Sprintf(`algorithm=%s`, dc.algorithm))
-	}
-	if dc.opaque != "" {
-		sl = append(sl, fmt.Sprintf(`opaque="%s"`, dc.opaque))
-	}
-	if dc.qop != "" {
-		sl = append(sl, fmt.Sprintf("qop=%s", dc.qop))
-		sl = append(sl, fmt.Sprintf("nc=%08x", dc.nc))
-		sl = append(sl, fmt.Sprintf(`cnonce="%s"`, dc.cnonce))
-	}
-	if dc.userHash == "true" {
-		sl = append(sl, fmt.Sprintf(`userhash=%s`, dc.userHash))
-	}
-	sl = append(sl, fmt.Sprintf(`response="%s"`, dc.response))
+func (dc *digestCredentials) String() string { _ = "STUB: not implemented"; return "" }
 
-	return strings.Join(sl, ", ")
-}
-
-func newHashFunc(algorithm string) hash.Hash {
-	hf := digestHashFuncs[algorithm]
-	h := hf()
-	h.Reset()
-	return h
-}
+func newHashFunc(algorithm string) hash.Hash { _ = "STUB: not implemented"; return *new(hash.Hash) }
